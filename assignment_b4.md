@@ -1,0 +1,304 @@
+Assignment B-4, Option A: Strings and functional programming in R
+================
+Berke Ucar
+2023-12-8
+
+**Caution:** If you do not have any of the
+`janeaustenr, tidyverse, stringr, purr, tidytext` and `test_that`
+libraries installed, please uncomment the line containing the missing
+library’s installation code and run the following code block.
+
+``` r
+#install.packages("janeaustenr")
+#install.packages("tidyverse")
+#install.packages("stringr")
+#install.packages("purrr")
+#install.packages("tidytext")
+#install.packages("testthat")
+```
+
+``` r
+suppressPackageStartupMessages(library(janeaustenr))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(purrr))
+suppressPackageStartupMessages(library(tidytext))
+suppressPackageStartupMessages(library(testthat))
+```
+
+In this assignment, it is required to complete 2 of the 3 exercises
+listed on the assignment
+[webpage](https://stat545.stat.ubc.ca/assignments/assignment-b4/). My
+choice of the exercises is the following:
+
+1.  Exercise 1 - Most Common Words in a Book
+2.  Exercise 2 - Pig Latin Converter Function
+
+### Exercise 1 - Most Common Words in a Book:
+
+The main goal of this exercise to cure the datatable (text) and report
+the counts of the most frequent datapoint values (most common words).
+
+For this exercise, I will use the provided Jane Austen book, *Sense and
+Sensibility* from the library *janeaustenr*. This dataset contains 1
+column, the text of the novel. Each cell contains up to 70 characters,
+as mentioned in the [package
+documentation](https://cran.r-project.org/web/packages/janeaustenr/janeaustenr.pdf).
+
+``` r
+text <- janeaustenr::sensesensibility # this is a character vector, according to the documentation
+class(text) # yes, it is actually a character vector
+```
+
+    ## [1] "character"
+
+``` r
+head(text)
+```
+
+    ## [1] "SENSE AND SENSIBILITY" ""                      "by Jane Austen"       
+    ## [4] ""                      "(1811)"                ""
+
+``` r
+tail(text)
+```
+
+    ## [1] "within sight of each other, they could live without disagreement" 
+    ## [2] "between themselves, or producing coolness between their husbands."
+    ## [3] ""                                                                 
+    ## [4] ""                                                                 
+    ## [5] ""                                                                 
+    ## [6] "THE END"
+
+It is requested to stop words from the text. I can filter stop words out
+right away, but I want to first remove the non-letter characters from
+the text (except *\[space\]*) and separately store each word in a cell.
+Then, I can remove the stop words. This way seems easier and cleaner. I
+also clear the empty string here as well.
+
+``` r
+text_stripped <- map(text, function(x) str_remove_all(x, "[^[:alnum:]|[:space:]]")) # remove all non-space and non-alphanumerical element 
+text_stripped <- unlist(text_stripped) # due to dimensional inconsistency, I am unlisting a step down the list
+
+text_separated <- map(text_stripped, function(x) str_split(x, " ") )  # split each cell into words
+text_separated <- unlist(text_separated) # due to dimensional inconsistency, I am unlisting a step down the list
+
+# now as a preparation for filtering, I am casting the vector to a tibble
+text_tibble <- tibble(text_separated) 
+text_tibble <- text_tibble %>% filter(text_separated!="" & !is.na(text_separated))
+text_tibble <- text_tibble %>% rename(words = text_separated )
+```
+
+Next step is filtering out the stop words. I will use *tidytext*’s
+*stop_words* as the reference for stop words, as suggested on the
+assignment page. In order to eliminate inconsistencies, I will convert
+the strings to lowercase first.
+
+``` r
+text_tibble <- text_tibble %>% mutate(words=tolower(words))
+head(text_tibble)
+```
+
+    ## # A tibble: 6 × 1
+    ##   words      
+    ##   <chr>      
+    ## 1 sense      
+    ## 2 and        
+    ## 3 sensibility
+    ## 4 by         
+    ## 5 jane       
+    ## 6 austen
+
+Now, we can filter the stop words out easily. But first, I need to
+inspect data of *tidytext*’s *stop_words*.
+
+``` r
+glimpse(tidytext::stop_words) # it is a tibble with 2 columns
+```
+
+    ## Rows: 1,149
+    ## Columns: 2
+    ## $ word    <chr> "a", "a's", "able", "about", "above", "according", "accordingl…
+    ## $ lexicon <chr> "SMART", "SMART", "SMART", "SMART", "SMART", "SMART", "SMART",…
+
+Now, in order to feed it into `filter()` function, I will pull the
+*word* column of the `tidytext::stop_words`. Then, I will filter out the
+stop words.
+
+``` r
+stop_words <- tidytext::stop_words %>% pull(word)
+curated_text <- text_tibble %>% filter(!words %in% stop_words)
+head(curated_text, n =10)
+```
+
+    ## # A tibble: 10 × 1
+    ##    words      
+    ##    <chr>      
+    ##  1 sense      
+    ##  2 sensibility
+    ##  3 jane       
+    ##  4 austen     
+    ##  5 1811       
+    ##  6 chapter    
+    ##  7 1          
+    ##  8 family     
+    ##  9 dashwood   
+    ## 10 settled
+
+I want to see how many unique words there are and the occurance counts
+of the words. So, that I can maybe show the most important ones due to
+the limited space that I can use in a graph.
+
+``` r
+glimpse(curated_text %>% count(words, sort = TRUE))
+```
+
+    ## Rows: 6,906
+    ## Columns: 2
+    ## $ words <chr> "elinor", "marianne", "time", "dashwood", "sister", "edward", "m…
+    ## $ n     <int> 616, 488, 237, 224, 213, 210, 209, 201, 198, 176, 163, 156, 148,…
+
+Now, time for the final show. I will use a bar diagram to show the word
+counts. But, as there are approximately 7k unique values, I will only
+include the first 15.
+
+``` r
+plot_text <- top_n(curated_text %>% count(words, sort = TRUE),10) # select the top 10 used words
+```
+
+    ## Selecting by n
+
+``` r
+ggplot(plot_text,aes(reorder(x=words,-n), y=n)) +
+  geom_bar(stat="identity") +
+  xlab("Top 10 most common words") +
+  ylab("Count") +
+  ggtitle("Top 10 most used words in Sense and Sensibility of Jane Austen and their count")
+```
+
+![](assignment_b4_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+
+### Exercise 2:
+
+This exercise requires to define a custom Pig Latin rule set and a
+function that converts modern English words into the custom Pig Latin.
+
+I will use the first 3 rules described both on the [assignment
+page](https://stat545.stat.ubc.ca/assignments/assignment-b4/) and
+[Wikipedia page for Pig
+Latin](https://en.wikipedia.org/wiki/Pig_Latin#Background) but I will
+change the rules as if they are saying vowel instead of consonant and
+vice versa. To be more precise, the following is what I meant:
+
+> 1.  For words that begin with vowel sounds, all letters before the
+>     initial consonant are placed at the end of the word sequence.
+> 2.  When words begin with vowel clusters (multiple vowels that form
+>     one sound), the whole sound is added to the end
+> 3.  For words beginning with consonant sounds, one removes the initial
+>     consonant(s) along with the first vowel or vowel cluster.
+
+I will use these as my rearrangement component. For the addition
+component, I will add “bu” to the start of the word after the
+rearrangement is performed. I will call my language Peccary Latin :D. As
+far as I understand, the first and second rule means the same. Hence,
+only a single if statement is enough for those two.
+
+``` r
+#' Convert words to Peccary Latin
+#' 
+#' @details 
+#' Converts the given word to Peccary Latin. The process contains two main steps: rearrangement and addition. For the rearrangement step, the first vowel or consecutive vowel group will be cut and pasted at the end of the word for words begin with a vowel. For the words beginning with a consonant, the consonant(s) will be erased with their following vowel or vowel group.
+#' At the end of the rearrangement step, "bu" sound will be extended to the rearranged word's start.
+#' The method takes a word, as a string and returns another string.
+#' 
+#' @param word the word string that is intended to be converted into Peccary Latin
+#'
+#' @return resulted string after the rearrangement and addition steps
+#' @example 
+#' convert_to_peccary_latin("hello")
+#' convert_to_peccary_latin("world")
+#' convert_to_peccary_latin("Healthy")
+convert_to_peccary_latin <- function(word) {
+  # checks
+  if (is.na(word)) stop("Sorry, you entered an NA value.")
+  if (class(word) != "character")  stop("Sorry, you entered an non-string/character value.")
+  if (str_length(word) == 0) stop("Sorry, you entered an empty string.")
+  if (word != str_extract(word, "[:alpha:]*")) stop("Sorry, you entered a string that contains non-alpha characters.")
+  
+  # let's make all the letters lowercase for consistency
+  word_lower <- str_to_lower(word)
+
+  first <- str_extract(word_lower, "^[aeiou]+") # try to extract the vowel(s) from the start of the word until there is a consonant seen
+  if (!is.na(first)) { # if there is a vowel or are vowels at the start of the word
+    len_first <- str_length(first)
+    if (len_first== str_length(word_lower)) # if there is no consonants in the word
+      rearrangement <- word_lower
+    else
+      rearrangement <- paste(str_sub(word_lower, len_first+1, -1) , str_sub(word_lower, 1, len_first),sep="")
+  }
+  
+  else {
+    second <- str_extract(word_lower, "^[^[aeiou]]+") # try to extract consonant(s) from the start of the word until there is a vowel seen
+    len_sec <- str_length(second)
+    if (len_sec == str_length(word_lower)) # if there is no vowels in the word
+      rearrangement <- "" 
+    else {
+      sub <- str_sub(word_lower, len_sec+1, -1)
+      vowels <- str_extract(sub, "^[aeiou]+") # try to extract the immediate vowel(s) after the sequence of consonants
+      len_vow <- str_length(vowels)
+      rearrangement <- str_sub(word_lower, len_sec+len_vow+1, -1) # erase consonant(s) and following vowel(s) to the end
+    }
+  }
+  
+  return(paste("bu", rearrangement,sep="")) # add the "bu" sound to the start of the rearranged word
+} 
+```
+
+Here are some example runs for the function.
+
+``` r
+convert_to_peccary_latin("tomorrow")
+```
+
+    ## [1] "bumorrow"
+
+``` r
+convert_to_peccary_latin("authorize")
+```
+
+    ## [1] "buthorizeau"
+
+``` r
+convert_to_peccary_latin("rhythm") # a word without a vowel (no change will be appear besides addition of "bu")
+```
+
+    ## [1] "bu"
+
+``` r
+convert_to_peccary_latin("eau") # a word without a consonant (everything will be erased)
+```
+
+    ## [1] "bueau"
+
+``` r
+convert_to_peccary_latin("Style")  # a word without any other letters than a consonant group and a vowel (everything will be erased)
+```
+
+    ## [1] "bu"
+
+And last but not least, tests for the function.
+
+``` r
+test_that( "Testing for the function convert_to_peccary_latin", {
+  expect_equal(convert_to_peccary_latin("ea"), "buea") # edge case - all vowels
+  expect_equal(convert_to_peccary_latin("rhym"), "bu") # edge case - all consonants
+  expect_equal(convert_to_peccary_latin("cycle"), "bu") # edge case - initial consonant(s) followed by vowel(s)
+  expect_error(convert_to_peccary_latin(NA), "Sorry, you entered an NA value.")
+  expect_error(convert_to_peccary_latin(23), "Sorry, you entered an non-string/character value.")
+  expect_error(convert_to_peccary_latin(""), "Sorry, you entered an empty string.")
+  expect_error(convert_to_peccary_latin("berke.ucar"), "Sorry, you entered a string that contains non-alpha characters.")
+  expect_error(convert_to_peccary_latin("berke ucar"), "Sorry, you entered a string that contains non-alpha characters.")
+})
+```
+
+    ## Test passed 🥳
